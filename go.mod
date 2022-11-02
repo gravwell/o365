@@ -1,3 +1,3 @@
-module github.com/floren/o365
+module github.com/gravwell/o365
 
-go 1.13
+go 1.19
