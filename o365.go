@@ -17,6 +17,20 @@ import (
 	"time"
 )
 
+const (
+	PlanEnterprise        Plan = 0
+	PlanGCCGovernment     Plan = 1
+	PlanGCCHighGovernment Plan = 2
+	PlanDODGovernment     Plan = 3
+
+	enterpriseName        string = `enterprise`
+	gccGovernmentName     string = `gccgovernment`
+	gccHighGovernmentName string = `gcchighgovernment`
+	dodGovernmentName     string = `dodgovernment`
+)
+
+type Plan int
+
 // authInfo holds information returned by the microsoft oauth API
 // (see https://docs.microsoft.com/en-us/office/office-365-management-api/get-started-with-office-365-management-apis#sample-response)
 type authInfo struct {
@@ -55,6 +69,7 @@ type O365Config struct {
 	ClientSecret  string
 	ClientID      string // aka application id
 	DirectoryID   string // aka tenant id
+	PlanName      string // the Subscription plan
 	APITimeout    time.Duration
 	ContentTypes  []string
 }
@@ -67,11 +82,14 @@ var DefaultConfig = O365Config{
 
 // New creates an instance of the O365 client.
 func New(c O365Config) (*O365, error) {
+	var p Plan
+	if err := p.Parse(c.PlanName); err != nil {
+		return nil, fmt.Errorf("invalid plan %w", err)
+	}
 	// using url.Parse seems like overkill
 	loginURL := "https://login.microsoftonline.com/"
-	resourceURL := "https://manage.office.com/"
 	au := loginURL + c.TenantDomain + "/oauth2/token?api-version=1.0"
-	api := resourceURL + "api/v1.0/" + c.DirectoryID + "/activity/feed/"
+	api := p.BaseURL() + c.DirectoryID + "/activity/feed/"
 	cl := &http.Client{Timeout: c.APITimeout}
 	var ai *authInfo
 
@@ -316,4 +334,54 @@ func (o *O365) GetContent(urlStr string) ([]byte, error) {
 	}
 	defer res.Body.Close()
 	return ioutil.ReadAll(res.Body)
+}
+
+func (p *Plan) Parse(v string) (err error) {
+	if v = strings.TrimSpace(v); v == `` {
+		*p = PlanEnterprise
+		return
+	}
+	tv := strings.Join(strings.Fields(strings.ToLower(v)), ``)
+	switch tv {
+	case enterpriseName:
+		*p = PlanEnterprise //default is enterprise
+	case gccGovernmentName:
+		*p = PlanGCCGovernment
+	case gccHighGovernmentName:
+		*p = PlanGCCHighGovernment
+	case dodGovernmentName:
+		*p = PlanDODGovernment
+	default:
+		err = fmt.Errorf("unknown plan name %q", v)
+
+	}
+	return
+}
+
+func (p *Plan) String() string {
+	switch *p {
+	case PlanEnterprise:
+		return `Enterprise`
+	case PlanGCCGovernment:
+		return `GCC Government`
+	case PlanGCCHighGovernment:
+		return `GCC High Government`
+	case PlanDODGovernment:
+		return `DOD Government`
+	}
+	return ``
+}
+
+func (p *Plan) BaseURL() string {
+	switch *p {
+	case PlanEnterprise:
+		return `https://manage.office.com/api/v1.0/`
+	case PlanGCCGovernment:
+		return `https://manage-gcc.office.com/api/v1.0/`
+	case PlanGCCHighGovernment:
+		return `https://manage.office365.us/api/v1.0/`
+	case PlanDODGovernment:
+		return `https://manage.protection.apps.mil/api/v1.0/`
+	}
+	return `https://manage.office.com/api/v1.0/`
 }
